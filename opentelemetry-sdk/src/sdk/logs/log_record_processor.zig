@@ -279,6 +279,9 @@ pub const BatchingLogRecordProcessor = struct {
         // Cancel the background task (unblocks its wait and waits for it to finish)
         if (self.export_task) |*task| {
             task.cancel(self.io);
+            // Wait for the export task to fully exit before the caller frees the
+            // exporter/config (otherwise it touches freed memory -> segfault).
+            _ = @field(std.Io.Future(void), "await")(task, self.io);
             self.export_task = null;
         }
     }
@@ -348,7 +351,9 @@ pub const BatchingLogRecordProcessor = struct {
         // Export the batch (unlock mutex during export to allow concurrent onEmit calls)
         self.mutex.unlock(self.io);
         self.exporter.exportLogs(logs_to_export) catch |err| {
-            std.log.err("BatchingLogRecordProcessor failed to export log batch: {}", .{err});
+            // `Canceled` is expected when the processor is shutting down and the
+            // in-flight export is cancelled — not a real error.
+            if (err != error.Canceled) std.log.err("BatchingLogRecordProcessor failed to export log batch: {}", .{err});
         };
         self.mutex.lockUncancelable(self.io);
 

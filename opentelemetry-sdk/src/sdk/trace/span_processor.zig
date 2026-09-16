@@ -152,11 +152,11 @@ pub const SimpleProcessor = struct {
 };
 
 /// BatchingProcessor batches finished spans and passes them to the configured SpanExporter
-pub const BatchingProcessor = struct {
-    allocator: std.mem.Allocator,
-    exporter: SpanExporter,
+    pub const BatchingProcessor = struct {
+        allocator: std.mem.Allocator,
+        exporter: SpanExporter,
 
-    // Configuration
+        // Configuration
     max_queue_size: usize,
     scheduled_delay_millis: u64,
     export_timeout_millis: u64,
@@ -169,6 +169,13 @@ pub const BatchingProcessor = struct {
     io: std.Io,
     export_task: ?std.Io.Future(void),
     should_shutdown: std.atomic.Value(bool),
+
+    // Per-processor reclaiming arena for queued clones. Mirrors the SDK logs
+    // BatchingLogRecordProcessor: clones are duped into this arena, the export
+    // array is taken from the outer allocator (freed per batch), and the arena
+    // is reset only once the queue has fully drained. This bounds memory to
+    // max_queue_size clones + one in-flight batch and avoids per-span frees.
+    batch_arena: std.heap.ArenaAllocator,
 
     const Self = @This();
 
@@ -203,6 +210,7 @@ pub const BatchingProcessor = struct {
             .io = io,
             .export_task = null,
             .should_shutdown = std.atomic.Value(bool).init(false),
+            .batch_arena = std.heap.ArenaAllocator.init(allocator),
         };
 
         // Start the background export task using io.concurrent
@@ -216,6 +224,7 @@ pub const BatchingProcessor = struct {
         std.debug.assert(self.export_task == null);
         self.queue.deinitItems();
         self.queue.deinit(self.allocator);
+        self.batch_arena.deinit();
         self.allocator.destroy(self);
     }
 
@@ -250,7 +259,7 @@ pub const BatchingProcessor = struct {
             return;
         }
 
-        const queued_span = cloneSpan(self.allocator, span) catch {
+        const queued_span = cloneSpan(self.batch_arena.allocator(), span) catch {
             std.log.err("BatchingProcessor failed to copy span for queue", .{});
             return;
         };
@@ -258,6 +267,7 @@ pub const BatchingProcessor = struct {
         if (!self.queue.push(queued_span)) {
             std.log.err("BatchingProcessor failed to add span to queue", .{});
             var owned_span = queued_span;
+            freeClonedSpan(self.batch_arena.allocator(), &owned_span);
             owned_span.deinit();
             return;
         }
@@ -277,6 +287,9 @@ pub const BatchingProcessor = struct {
         // Cancel the background task (unblocks its wait and waits for it to finish)
         if (self.export_task) |*task| {
             task.cancel(self.io);
+            // Wait for the export task to fully exit before the caller frees the
+            // exporter/config (otherwise it touches freed memory -> segfault).
+            _ = @field(std.Io.Future(void), "await")(task, self.io);
             self.export_task = null;
         }
     }
@@ -347,13 +360,21 @@ pub const BatchingProcessor = struct {
         // Export the batch (unlock mutex during export)
         self.mutex.unlock(self.io);
         defer self.mutex.lockUncancelable(self.io);
-        defer for (export_spans) |*span| {
-            span.deinit();
-        };
 
         self.exporter.exportSpans(spans_to_export) catch |err| {
-            std.log.err("BatchingProcessor failed to export span batch: {}", .{err});
+            // `Canceled` is expected when the processor is shutting down and the
+            // in-flight export is cancelled — not a real error.
+            if (err != error.Canceled) std.log.err("BatchingProcessor failed to export span batch: {}", .{err});
         };
+
+        // Reset the batch arena once the queue is fully drained — every queued
+        // clone has been exported and nothing still points into the arena. This
+        // reclaims all clone name/attr memory in one bulk free. Under a steady
+        // firehose the queue never empties, so the arena simply retains one
+        // block sized to max_queue_size clones (bounded, not leaking).
+        if (self.queue.len == 0) {
+            _ = self.batch_arena.reset(.retain_capacity);
+        }
         return true;
     }
 
@@ -366,14 +387,41 @@ pub const BatchingProcessor = struct {
 
         try result.ensureTotalCapacity(allocator, source.count());
         for (source.keys(), source.values()) |key, value| {
-            try result.put(allocator, key, value);
+            // Deep-copy keys and string values: source attribute strings may be
+            // request-scoped (e.g. url.path) and are freed after onEnd, so a bare
+            // reference would dangle into the async export.
+            const owned_key = try allocator.dupe(u8, key);
+            const owned_value = switch (value) {
+                .string => |s| attribute.AttributeValue{ .string = try allocator.dupe(u8, s) },
+                else => value,
+            };
+            try result.put(allocator, owned_key, owned_value);
         }
 
         return result;
     }
 
+    fn freeAttributes(allocator: std.mem.Allocator, attrs: SpanAttributes) void {
+        for (attrs.keys(), attrs.values()) |k, v| {
+            allocator.free(k);
+            if (v == .string) allocator.free(v.string);
+        }
+    }
+
+    fn freeClonedSpan(allocator: std.mem.Allocator, span: *trace.Span) void {
+        allocator.free(span.name);
+        freeAttributes(allocator, span.attributes);
+        for (span.events.items) |*ev| freeAttributes(allocator, ev.attributes);
+        for (span.links.items) |*lk| freeAttributes(allocator, lk.attributes);
+    }
+
     fn cloneSpan(allocator: std.mem.Allocator, span: trace.Span) !trace.Span {
-        var result = trace.Span.init(allocator, span.span_context, span.name, span.kind, span.scope);
+        // Deep-copy the span name: trace.Span.init stores `name` by reference, so a
+        // bare copy would leave the queued span pointing at the caller's (often
+        // request-scoped) buffer, which is freed after the request -> dangling
+        // pointer -> segfault when the export task encodes it.
+        const owned_name = try allocator.dupe(u8, span.name);
+        var result = trace.Span.init(allocator, span.span_context, owned_name, span.kind, span.scope);
         errdefer result.deinit();
 
         result.start_time_unix_nano = span.start_time_unix_nano;
@@ -381,6 +429,12 @@ pub const BatchingProcessor = struct {
         result.parent_span_id = span.parent_span_id;
         result.status = span.status;
         result.is_recording = span.is_recording;
+
+        // The resource slice is owned by the TracerProvider (not the span; Span.deinit
+        // does not free it), so copying the pointer into the queued clone is safe and
+        // avoids a dangling/empty resource on export. Without this, exported spans carry
+        // no service.name and render as `unknown_service` in the backend.
+        result.resource = span.resource;
 
         result.attributes = try cloneAttributes(allocator, span.attributes);
 

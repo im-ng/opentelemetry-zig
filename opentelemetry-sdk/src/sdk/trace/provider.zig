@@ -315,7 +315,7 @@ pub const Tracer = struct {
             trace_api.TraceFlags.sampled();
 
         // Create span context
-        const span_context = trace_api.SpanContext.init(
+        var span_context = trace_api.SpanContext.init(
             trace_id,
             span_id,
             trace_flags,
@@ -329,8 +329,16 @@ pub const Tracer = struct {
             (if (parent_sc.span_id.isValid()) parent_sc.span_id else null)
         else
             null;
-        span.is_recording = true; // SDK spans are recording by default
+        // Apply the configured head sampler (OTEL_TRACES_SAMPLER). The SDK parses
+        // this config but never used it, so every span was exported regardless of the
+        // ratio. Drop the span (is_recording=false) when the sampler decides, and clear
+        // the `sampled` trace flag so downstream propagation stays consistent.
+        const record_decision = self.shouldRecord(trace_id, parent_span_context, span_name);
+        span.is_recording = record_decision;
         span.resource = self.provider.resource;
+        if (!record_decision) {
+            span_context.trace_flags = span_context.trace_flags.clearSampled();
+        }
 
         // Set attributes if provided
         if (options.attributes) |attrs| {
@@ -352,6 +360,35 @@ pub const Tracer = struct {
         self.provider.onSpanStart(&span, parent_context);
 
         return span;
+    }
+
+    /// Apply the configured head sampler to decide whether a span is recorded/exported.
+    fn shouldRecord(self: *Self, trace_id: trace_api.TraceID, parent_sc: ?trace_api.SpanContext, name: []const u8) bool {
+        _ = name;
+        const cfg = self.provider.config orelse return true;
+        const sampler = cfg.trace_config.sampler;
+        const parent_sampled = if (parent_sc) |ps| ps.trace_flags.isSampled() else false;
+        return switch (sampler) {
+            .always_on => true,
+            .always_off => false,
+            .traceidratio => Self.ratioHit(trace_id, cfg.trace_config.sampler_arg),
+            .parentbased_always_on => true,
+            .parentbased_always_off => parent_sampled,
+            .parentbased_traceidratio => if (parent_sampled) true else Self.ratioHit(trace_id, cfg.trace_config.sampler_arg),
+            .jaeger_remote => true,
+            .parentbased_jaeger_remote => parent_sampled,
+            // Any other/unrecognized sampler (e.g. xray) defaults to recording.
+            else => true,
+        };
+    }
+
+    fn ratioHit(trace_id: trace_api.TraceID, arg: ?[]const u8) bool {
+        const ratio = if (arg) |a| std.math.clamp(std.fmt.parseFloat(f64, a) catch 1.0, 0.0, 1.0) else 1.0;
+        if (ratio >= 1.0) return true;
+        if (ratio <= 0.0) return false;
+        const lower = std.mem.readInt(u64, trace_id.value[8..16], .big);
+        const threshold = @as(u64, @intFromFloat(ratio * 18446744073709551616.0));
+        return lower < threshold;
     }
 
     /// Implementation of Tracer.isEnabled
