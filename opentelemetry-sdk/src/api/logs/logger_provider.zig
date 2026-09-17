@@ -153,6 +153,27 @@ pub const ReadableLogRecord = struct {
     scope: InstrumentationScope,
     location: ?std.builtin.SourceLocation,
     event_name: ?[]const u8,
+
+    /// Frees the heap memory produced by `toReadable`. `resource`, `scope`,
+    /// `trace_id`, `span_id`, `severity_number`, `trace_flags`, `location` and the
+    /// keys of a `.structured` body are NOT owned by this record and must not be
+    /// freed. The values of a `.structured` body are owned (duped) and are freed.
+    pub fn deinit(self: *const ReadableLogRecord, allocator: std.mem.Allocator) void {
+        if (self.severity_text) |t| allocator.free(t);
+        if (self.event_name) |en| allocator.free(en);
+        if (self.body) |b| switch (b) {
+            .string => |s| allocator.free(s),
+            .structured => |kvs| {
+                for (kvs) |kv| if (kv.value == .string) allocator.free(kv.value.string);
+                allocator.free(kvs);
+            },
+        };
+        for (self.attributes) |a| {
+            allocator.free(a.key);
+            if (a.value == .string) allocator.free(a.value.string);
+        }
+        allocator.free(self.attributes);
+    }
 };
 
 /// SDK LoggerProvider implementation

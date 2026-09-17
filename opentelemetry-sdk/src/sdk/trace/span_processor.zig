@@ -170,13 +170,6 @@ pub const SimpleProcessor = struct {
     export_task: ?std.Io.Future(void),
     should_shutdown: std.atomic.Value(bool),
 
-    // Per-processor reclaiming arena for queued clones. Mirrors the SDK logs
-    // BatchingLogRecordProcessor: clones are duped into this arena, the export
-    // array is taken from the outer allocator (freed per batch), and the arena
-    // is reset only once the queue has fully drained. This bounds memory to
-    // max_queue_size clones + one in-flight batch and avoids per-span frees.
-    batch_arena: std.heap.ArenaAllocator,
-
     const Self = @This();
 
     pub const Config = struct {
@@ -210,7 +203,6 @@ pub const SimpleProcessor = struct {
             .io = io,
             .export_task = null,
             .should_shutdown = std.atomic.Value(bool).init(false),
-            .batch_arena = std.heap.ArenaAllocator.init(allocator),
         };
 
         // Start the background export task using io.concurrent
@@ -224,7 +216,6 @@ pub const SimpleProcessor = struct {
         std.debug.assert(self.export_task == null);
         self.queue.deinitItems();
         self.queue.deinit(self.allocator);
-        self.batch_arena.deinit();
         self.allocator.destroy(self);
     }
 
@@ -259,7 +250,7 @@ pub const SimpleProcessor = struct {
             return;
         }
 
-        const queued_span = cloneSpan(self.batch_arena.allocator(), span) catch {
+        const queued_span = cloneSpan(self.allocator, span) catch {
             std.log.err("BatchingProcessor failed to copy span for queue", .{});
             return;
         };
@@ -267,7 +258,7 @@ pub const SimpleProcessor = struct {
         if (!self.queue.push(queued_span)) {
             std.log.err("BatchingProcessor failed to add span to queue", .{});
             var owned_span = queued_span;
-            freeClonedSpan(self.batch_arena.allocator(), &owned_span);
+            freeClonedSpan(self.allocator, &owned_span);
             owned_span.deinit();
             return;
         }
@@ -367,13 +358,17 @@ pub const SimpleProcessor = struct {
             if (err != error.Canceled) std.log.err("BatchingProcessor failed to export span batch: {}", .{err});
         };
 
-        // Reset the batch arena once the queue is fully drained — every queued
-        // clone has been exported and nothing still points into the arena. This
-        // reclaims all clone name/attr memory in one bulk free. Under a steady
-        // firehose the queue never empties, so the arena simply retains one
-        // block sized to max_queue_size clones (bounded, not leaking).
-        if (self.queue.len == 0) {
-            _ = self.batch_arena.reset(.retain_capacity);
+        // Free the clones we just exported. `popBatch` copies span values out of
+        // the queue into `spans_to_export`; those copies share their heap with the
+        // queue buffer slots, so freeing the copies also frees the (now-skipped)
+        // buffer slots. The clones were allocated with `self.allocator`, so free
+        // them the same way. This keeps live memory bounded to the queued
+        // (not-yet-exported) clones — at most `max_queue_size` — instead of the
+        // arena growing without bound under a steady firehose (memory surge, no
+        // plateau).
+        for (spans_to_export) |*s| {
+            freeClonedSpan(self.allocator, s);
+            s.deinit();
         }
         return true;
     }

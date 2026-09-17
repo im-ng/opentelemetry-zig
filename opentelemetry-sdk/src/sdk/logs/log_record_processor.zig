@@ -171,7 +171,6 @@ pub const BatchingLogRecordProcessor = struct {
 
     // State
     queue: LogRecordQueue,
-    batch_arena: std.heap.ArenaAllocator,
     mutex: std.Io.Mutex,
     wake: std.Io.Event,
     io: std.Io,
@@ -206,7 +205,6 @@ pub const BatchingLogRecordProcessor = struct {
             .export_timeout_millis = config.export_timeout_millis,
             .max_export_batch_size = max_export_batch_size,
             .queue = queue,
-            .batch_arena = std.heap.ArenaAllocator.init(allocator),
             .mutex = std.Io.Mutex.init,
             .wake = .unset,
             .io = io,
@@ -225,7 +223,6 @@ pub const BatchingLogRecordProcessor = struct {
         std.debug.assert(self.export_task == null);
 
         self.queue.deinit(self.allocator);
-        self.batch_arena.deinit();
         self.allocator.destroy(self);
     }
 
@@ -253,8 +250,8 @@ pub const BatchingLogRecordProcessor = struct {
             return;
         }
 
-        // Deep-copy into the batch arena and enqueue
-        const readable = log_record.toReadable(self.batch_arena.allocator()) catch |err| {
+        // Deep-copy into the outer allocator and enqueue
+        const readable = log_record.toReadable(self.allocator) catch |err| {
             std.log.err("BatchingLogRecordProcessor failed to convert log record: {}", .{err});
             return;
         };
@@ -357,13 +354,14 @@ pub const BatchingLogRecordProcessor = struct {
         };
         self.mutex.lockUncancelable(self.io);
 
+        // Free the records we just exported (allocated by `toReadable` with
+        // `self.allocator`) before freeing the batch array. `popBatch` copies
+        // record values out of the queue, so the copies share their heap with the
+        // (now-skipped) buffer slots. This keeps live memory bounded to the queued
+        // records — at most `max_queue_size` — instead of the arena growing
+        // without bound under a steady firehose.
+        for (logs_to_export) |*r| r.deinit(self.allocator);
         self.allocator.free(export_logs);
-
-        // Reset the batch arena once the queue is fully drained — all records have been exported
-        // and no remaining records point into the arena.
-        if (self.queue.len == 0) {
-            _ = self.batch_arena.reset(.retain_capacity);
-        }
 
         return true;
     }
