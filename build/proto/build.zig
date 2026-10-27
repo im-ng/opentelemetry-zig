@@ -67,10 +67,9 @@ fn addGenerateStep(b: *std.Build, info: CompilationInfo) !void {
     }
 
     // protoc code generation is driven by the protobuf dependency's builder.
-    const protobuf_dep = b.dependency("protobuf", .{
-        .target = info.target,
-        .optimize = info.optimize,
-    });
+    // Share the root graph's protobuf dependency (see build.zig) instead of
+    // re-running its build script, which would duplicate the module.
+    const protobuf_dep = b.dependency("protobuf", .{});
     const protoc_step = protobuf.RunProtocStep.create(protobuf_dep.builder, info.target, .{
         .destination_directory = b.path(proto_root ++ "/src"),
         .source_files = &source_files,
@@ -79,9 +78,9 @@ fn addGenerateStep(b: *std.Build, info: CompilationInfo) !void {
             proto_dep.path("."),
         },
     });
-    protoc_step.verbose = info.optimize == .Debug;
+    protoc_step.verbose = info.optimize == .debug;
 
-    step.dependOn(&protoc_step.step);
+    step.dependOn(protoc_step.step);
 }
 
 // Registers the "proto-update-tag" step, re-pinning the opentelemetry_proto
@@ -109,7 +108,7 @@ fn addTestStep(b: *std.Build, proto_mod: *std.Build.Module) !*std.Build.Step {
 
     const proto_tests = b.addTest(.{
         .root_module = proto_mod,
-        .filters = b.args orelse &[0][]const u8{},
+        .filters = &[0][]const u8{},
     });
     const run_proto_tests = b.addRunArtifact(proto_tests);
     step.dependOn(&run_proto_tests.step);

@@ -51,7 +51,7 @@ fn validateName(name: []const u8) FormatError!void {
 }
 
 test "instrument name must conform to the OpenTelemetry specification" {
-    const longname = "longname" ** 32;
+    const longname = "longname"**32;
     const invalid_names = &[_][]const u8{
         "0invalid",
         "wrongchar()",
@@ -99,7 +99,7 @@ fn validateUnit(unit: ?[]const u8) FormatError!void {
 }
 
 test "validate unit" {
-    const longunit = "longunit" ** 8;
+    const longunit = "longunit"**8;
     const invalid_units = &[_][]const u8{
         // 64 chars exceeds the limit
         longunit,
@@ -126,7 +126,7 @@ fn validateDescription(description: ?[]const u8) FormatError!void {
 }
 
 test "validate description" {
-    const longdesc = "longdesc" ** 128;
+    const longdesc = "longdesc"**128;
     const invalid_descs = &[_][]const u8{
         // 1024 chars exceeds the limit
         longdesc,

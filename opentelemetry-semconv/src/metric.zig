@@ -5725,7 +5725,7 @@ pub const rpc_server_request_size = types.Metric{
 
 /// Measures the number of messages received per RPC.
 ///
-/// Notes: Should be 1 for all non-streaming RPCs. **Streaming** : This metric is required for server and client streaming RPCs
+/// Notes: Should be 1 for all non-streaming RPCs. **Streaming**: This metric is required for server and client streaming RPCs
 ///
 /// ## Metadata
 /// | Instrument | Unit | Status |
