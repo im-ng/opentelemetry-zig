@@ -1226,7 +1226,7 @@ pub const cloud_region = types.StringAttribute{
 pub const cloud_resource_id = types.StringAttribute{
     .name = "cloud.resource_id",
     .brief = "Cloud provider-specific native identifier of the monitored cloud resource (e.g. an [ARN](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) on AWS, a [fully qualified resource ID](https://learn.microsoft.com/rest/api/resources/resources/get-by-id) on Azure, a [full resource name](https://google.aip.dev/122#full-resource-names) on GCP)",
-    .note = "On some cloud providers, it may not be possible to determine the full ID at startup, so it may be necessary to set `cloud.resource_id` as a span attribute instead.  The exact value to use for `cloud.resource_id` depends on the cloud provider. The following well-known definitions MUST be used if you set this attribute and they apply:  - **AWS Lambda:** The function [ARN](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html).   Take care not to use the \"invoked ARN\" directly but replace any   [alias suffix](https://docs.aws.amazon.com/lambda/latest/dg/configuration-aliases.html)   with the resolved function version, as the same runtime instance may be invocable with   multiple different aliases. - **GCP:** The [URI of the resource](https://cloud.google.com/iam/docs/full-resource-names) - **Azure:** The [Fully Qualified Resource ID](https://learn.microsoft.com/rest/api/resources/resources/get-by-id) of the invoked function,   *not* the function app, having the form   `/subscriptions/[SUBSCRIPTION_GUID]/resourceGroups/[RG]/providers/Microsoft.Web/sites/[FUNCAPP]/functions/[FUNC]`.   This means that a span attribute MUST be used, as an Azure function app can host multiple functions that would usually share   a TracerProvider.",
+    .note = "On some cloud providers, it may not be possible to determine the full ID at startup, so it may be necessary to set `cloud.resource_id` as a span attribute instead.  The exact value to use for `cloud.resource_id` depends on the cloud provider. The following well-known definitions MUST be used if you set this attribute and they apply:  - **AWS Lambda:**The function [ARN](https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html).   Take care not to use the \"invoked ARN\" directly but replace any   [alias suffix](https://docs.aws.amazon.com/lambda/latest/dg/configuration-aliases.html)   with the resolved function version, as the same runtime instance may be invocable with   multiple different aliases. - **GCP:**The [URI of the resource](https://cloud.google.com/iam/docs/full-resource-names) - **Azure:**The [Fully Qualified Resource ID](https://learn.microsoft.com/rest/api/resources/resources/get-by-id) of the invoked function,   *not* the function app, having the form   `/subscriptions/[SUBSCRIPTION_GUID]/resourceGroups/[RG]/providers/Microsoft.Web/sites/[FUNCAPP]/functions/[FUNC]`.   This means that a span attribute MUST be used, as an Azure function app can host multiple functions that would usually share   a TracerProvider.",
     .stability = .development,
     .requirement_level = .recommended,
 };
@@ -2627,7 +2627,7 @@ pub const faas_document_time = types.StringAttribute{
 pub const faas_instance = types.StringAttribute{
     .name = "faas.instance",
     .brief = "The execution environment ID as a string, that will be potentially reused for other invocations to the same function/function version.",
-    .note = "- **AWS Lambda:** Use the (full) log stream name.",
+    .note = "- **AWS Lambda:**Use the (full) log stream name.",
     .stability = .development,
     .requirement_level = .recommended,
 };
@@ -2736,7 +2736,7 @@ pub const faas_trigger = types.EnumAttribute(faas_triggerValue){
 pub const faas_version = types.StringAttribute{
     .name = "faas.version",
     .brief = "The immutable version of the function being executed.",
-    .note = "Depending on the cloud provider and platform, use:  - **AWS Lambda:** The [function version](https://docs.aws.amazon.com/lambda/latest/dg/configuration-versions.html)   (an integer represented as a decimal string). - **Google Cloud Run (Services):** The [revision](https://cloud.google.com/run/docs/managing/revisions)   (i.e., the function name plus the revision suffix). - **Google Cloud Functions:** The value of the   [`K_REVISION` environment variable](https://cloud.google.com/functions/docs/env-var#runtime_environment_variables_set_automatically). - **Azure Functions:** Not applicable. Do not set this attribute.",
+    .note = "Depending on the cloud provider and platform, use:  - **AWS Lambda:**The [function version](https://docs.aws.amazon.com/lambda/latest/dg/configuration-versions.html)   (an integer represented as a decimal string). - **Google Cloud Run (Services):**The [revision](https://cloud.google.com/run/docs/managing/revisions)   (i.e., the function name plus the revision suffix). - **Google Cloud Functions:**The value of the   [`K_REVISION` environment variable](https://cloud.google.com/functions/docs/env-var#runtime_environment_variables_set_automatically). - **Azure Functions:**Not applicable. Do not set this attribute.",
     .stability = .development,
     .requirement_level = .recommended,
 };
@@ -8026,10 +8026,10 @@ pub const vcs_provider_name = types.EnumAttribute(vcs_provider_nameValue){
     },
     .well_known_values = vcs_provider_nameValue.github,
 };
-/// The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.
+/// The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch**or **tag**in the repository.
 pub const vcs_ref_base_name = types.StringAttribute{
     .name = "vcs.ref.base.name",
-    .brief = "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.",
+    .brief = "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch**or **tag**in the repository.",
     .note = "`base` refers to the starting point of a change. For example, `main` would be the base reference of type branch if you've created a new reference of type branch from it and created new commits.",
     .stability = .development,
     .requirement_level = .recommended,
@@ -8064,10 +8064,10 @@ pub const vcs_ref_base_type = types.EnumAttribute(vcs_ref_base_typeValue){
     },
     .well_known_values = vcs_ref_base_typeValue.branch,
 };
-/// The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.
+/// The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch**or **tag**in the repository.
 pub const vcs_ref_head_name = types.StringAttribute{
     .name = "vcs.ref.head.name",
-    .brief = "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.",
+    .brief = "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch**or **tag**in the repository.",
     .note = "`head` refers to where you are right now; the current reference at a given time.",
     .stability = .development,
     .requirement_level = .recommended,

@@ -152,11 +152,11 @@ pub const SimpleProcessor = struct {
 };
 
 /// BatchingProcessor batches finished spans and passes them to the configured SpanExporter
-    pub const BatchingProcessor = struct {
-        allocator: std.mem.Allocator,
-        exporter: SpanExporter,
+pub const BatchingProcessor = struct {
+    allocator: std.mem.Allocator,
+    exporter: SpanExporter,
 
-        // Configuration
+    // Configuration
     max_queue_size: usize,
     scheduled_delay_millis: u64,
     export_timeout_millis: u64,

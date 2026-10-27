@@ -8,13 +8,14 @@ const sdk_build = @import("build/sdk/build.zig");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .safe });
 
     const benchmarks_mod = b.dependency("zbench", .{}).module("zbench");
-    const protobuf_mod = b.dependency("protobuf", .{
-        .optimize = optimize,
-        .target = target,
-    }).module("protobuf");
+    // Reuse the root graph's protobuf registration. A second
+    // b.dependency with different options re-runs the protobuf build
+    // script in the same graph, which re-roots src/protobuf.zig under a
+    // fresh module name ("protobuf0") — a 0.17 compile error.
+    const protobuf_mod = b.dependency("protobuf", .{}).module("protobuf");
 
     var build_mods = helpers.BuildModules.init(b.allocator);
     defer build_mods.deinit();

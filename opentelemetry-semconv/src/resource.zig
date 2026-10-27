@@ -2247,7 +2247,7 @@ pub const user_agent_original = types.StringAttribute{
     .requirement_level = .recommended,
 };
 
-/// The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.
+/// The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch**or **tag**in the repository.
 ///
 /// # Examples
 ///
@@ -2256,7 +2256,7 @@ pub const user_agent_original = types.StringAttribute{
 /// Note: This attribute is experimental and may change in the future.
 pub const vcs_ref_head_name = types.StringAttribute{
     .name = "vcs.ref.head.name",
-    .brief = "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch** or **tag** in the repository.",
+    .brief = "The name of the [reference](https://git-scm.com/docs/gitglossary#def_ref) such as **branch**or **tag**in the repository.",
     .stability = .development,
     .requirement_level = .recommended,
 };

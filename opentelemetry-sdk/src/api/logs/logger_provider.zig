@@ -470,12 +470,12 @@ pub const Logger = struct {
     ) void {
         if (self.provider.sdk_disabled or self.provider.is_shutdown.load(.acquire)) return;
 
-        const fields = @typeInfo(@TypeOf(data)).@"struct".fields;
-        var body_attrs: [fields.len]Attribute = undefined;
-        inline for (fields, 0..) |field, i| {
+    const fields = .{ .names = @typeInfo(@TypeOf(data)).@"struct".field_names, .types = @typeInfo(@TypeOf(data)).@"struct".field_types, .attrs = @typeInfo(@TypeOf(data)).@"struct".field_attrs };
+        var body_attrs: [fields.names.len]Attribute = undefined;
+        inline for (fields.names, fields.types, fields.attrs, 0..) |field_name, _, _, i| {
             body_attrs[i] = .{
-                .key = field.name,
-                .value = structFieldToAttributeValue(@field(data, field.name)),
+                .key = field_name,
+                .value = structFieldToAttributeValue(@field(data, field_name)),
             };
         }
         self.emitRecord(severity, .{ .structured = &body_attrs }, options);

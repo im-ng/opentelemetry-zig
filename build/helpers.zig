@@ -35,7 +35,7 @@ pub const BuildError = error{
 
 pub const CompilationInfo = struct {
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: std.builtin.Optimize,
     version: []const u8,
     pkg_name: []const u8,
 };
